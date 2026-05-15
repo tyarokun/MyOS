@@ -9,7 +9,7 @@ typedef enum{
 
 //スレッドから呼ばれるシステムコールの宣言
 void yield();
-void create(int id, void(*func)());
+void create(int id, int priprity, void(*func)());
 
 //システムコールに渡すパラメータの設定
 typedef struct{
@@ -19,6 +19,7 @@ typedef struct{
 		}yield;
 		struct{
 			int id;
+			int priority;
 			void (*func)();
 			int ret;
 		}create;

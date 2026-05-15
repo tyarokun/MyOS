@@ -14,41 +14,42 @@ thread_t *current;
 thread_t *prev;
 thread_t thread[THREAD_NUM];
 
-void getcurrent(){ //実行状態にするためにready_queから外す
-	ready_que.head = current->next; //レディキューのheadを次のスレッドにする
-	if(ready_que.head == NULL){ //
-		ready_que.tail = NULL;
+void getcurrent(){ //実行状態にするためにカレントスレッドをready_queから外す
+	ready_que[current->priority].head = current->next; //レディキューのheadを次のスレッドにする
+	if(ready_que[current->priority].head == NULL){
+		ready_que[current->priority].tail = NULL;
 	}
 	current->next = NULL;
 }
 
 void putcurrent(){//実行待ち状態にする
-	if(ready_que.tail == NULL){
-		ready_que.head = current;
+	if(ready_que[current->priority].tail == NULL){
+		ready_que[current->priority].head = current;
 	}else{//tail == NULLのときこの操作をやる意味はないのでelseで除外する
-		ready_que.tail->next = current;
+		ready_que[current->priority].tail->next = current;
 	}
-	ready_que.tail = current;
+	ready_que[current->priority].tail = current;
 }
 
 void put_thread(thread_t *thp){
 	thp->next = NULL;
-	if(ready_que.tail == NULL){
-		ready_que.head = thp;
+	if(ready_que[thp->priority].tail == NULL){
+		ready_que[thp->priority].head = thp;
 	}else{
-		ready_que.tail->next = thp;
+		ready_que[thp->priority].tail->next = thp;
 	}
-	ready_que.tail = thp;
+	ready_que[thp->priority].tail = thp;
 }
 
 void thread_bootstrap(){//スレッドが初めて実行される時に関数を呼び出すためのもの
 	current->func();
 }
 
-void kernel_create_thread(int id, void (*func)()){
+void kernel_create_thread(int id, int priority, void (*func)()){
 	uintptr_t *sp; //ARM64のuintptr_tは64bitであり、レジスタ1つの大きさに対応している
 	//スレッドの設定開始
 	thread[id].id = id;
+	thread[id].priority = priority;
 	thread[id].func = func;
 	thread[id].next = NULL;
 	sp = (uintptr_t *)&stack[(id + 1) * STACK_SIZE];
@@ -71,19 +72,26 @@ void kernel_create_thread(int id, void (*func)()){
 	put_thread(&thread[id]);//作ったスレッドをレディキューに入れる
 }
 
-void kernel_start(int id, void (*func)()){//初期スレッド生成用
+void kernel_start(int id, int priority, void (*func)()){//初期スレッド生成用
 	current = NULL;
-	ready_que.head = NULL;
-  ready_que.tail = NULL;
-  kernel_sp = NULL;
-	kernel_create_thread(id, func); //初期スレッド生成
+	kernel_sp = NULL;
+	for(int i = 0; i < PRIORITYNUM; i++){
+		ready_que[i].head = NULL;
+		ready_que[i].tail = NULL;
+	}
+	kernel_create_thread(id, priority, func); //初期スレッド生成
 	kernel_schedule();
 	dispatch(&kernel_sp, current->sp); //初期スレッドに動作を預ける
 }
 
 void kernel_schedule(){
-	prev = current; //現在のスレッドをprevへ保存
-	current = ready_que.head; //カレントスレッドを次のスレッドにするためにレディキューの先頭を代入
+	prev = current; //現在のスレッドをprevへ保存(dispatch用)
+	for(int i = 0; i < PRIORITYNUM; i++){//優先度が最も高い実行待機中のスレッドを検索する
+		if(ready_que[i].head){
+			current = ready_que[i].head; //カレントスレッドを次のスレッドにするためにレディキューの先頭を代入
+			break;
+		}
+	}
 }
 
 void syscall_run(syscall_type_t type, syscall_param_t *param){ //実際のシステムコールの処理
@@ -95,7 +103,7 @@ void syscall_run(syscall_type_t type, syscall_param_t *param){ //実際のシス
 			dispatch(&prev->sp, current->sp);
 			break;
 		case SYSCALL_TYPE_CREATE:
-			kernel_create_thread(param->un.create.id, param->un.create.func);
+			kernel_create_thread(param->un.create.id, param->un.create.priority, param->un.create.func);
 			break;
 		default:
 			break;

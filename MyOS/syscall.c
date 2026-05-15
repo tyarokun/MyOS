@@ -7,9 +7,10 @@ void yield(){
 	syscall_run(SYSCALL_TYPE_YIELD, &param);
 }
 
-void create(int id, void (*func)()){
+void create(int id, int priority, void (*func)()){
 	syscall_param_t param;
 	param.un.create.id = id;
+	param.un.create.priority = priority;
 	param.un.create.func = func;
 	syscall_run(SYSCALL_TYPE_CREATE, &param);
 }
